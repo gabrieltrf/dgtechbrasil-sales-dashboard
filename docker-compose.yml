@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    container_name: dgt_backend
+    restart: unless-stopped
+    volumes:
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/sales.db
+    expose:
+      - "8000"
+    networks:
+      - app_net
+
+  frontend:
+    build: ./frontend
+    container_name: dgt_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app_net
+
+networks:
+  app_net:
+    driver: bridge
