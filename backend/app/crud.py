@@ -51,6 +51,8 @@ def get_upload_logs(db: Session, limit: int = 20) -> list[UploadLog]:
 
 _FEE_JOIN  = "LEFT JOIN fee_configs f ON f.sku = s.sku AND f.platform = s.platform"
 _TAXA_EXPR = "COALESCE(f.fee_percent, 0) * s.total_value / 100.0 + COALESCE(f.fee_fixed, 0) * s.quantity"
+_OP_EXPR   = "(SELECT COALESCE(SUM(amount), 0) FROM operational_costs WHERE cost_type='per_unit' AND active=1)"
+_LUCRO_REAL_CRUD = f"s.gross_profit - ({_TAXA_EXPR}) - ({_OP_EXPR}) * s.quantity"
 
 
 def get_sales_page(db: Session, filters: dict, page: int, page_size: int):
@@ -68,11 +70,11 @@ def get_sales_page(db: Session, filters: dict, page: int, page_size: int):
     rows = db.execute(text(f"""
         SELECT
             s.*,
-            ({_TAXA_EXPR})                                 AS taxa_plataforma,
-            s.gross_profit - ({_TAXA_EXPR})                AS lucro_real,
+            ({_TAXA_EXPR})                                        AS taxa_plataforma,
+            {_LUCRO_REAL_CRUD}                                    AS lucro_real,
             CASE WHEN s.total_value > 0
-                 THEN (s.gross_profit - ({_TAXA_EXPR})) / s.total_value * 100
-                 ELSE 0 END                                AS margem_real
+                 THEN ({_LUCRO_REAL_CRUD}) / s.total_value * 100
+                 ELSE 0 END                                       AS margem_real
         FROM sales s {_FEE_JOIN} {where}
         ORDER BY s.sale_date DESC, s.id DESC
         LIMIT :limit OFFSET :offset
@@ -87,13 +89,15 @@ def export_sales_csv(db: Session, filters: dict) -> str:
     where, params = _build_where(filters, prefix="s")
     rows = db.execute(text(f"""
         SELECT s.uf, s.sale_date, s.platform, s.sku, s.quantity, s.unit_price,
-               s.total_value, s.cost_price, s.shipping,
+               s.total_value,
+               s.cost_price * s.quantity AS custo_total,
+               s.shipping,
                s.gross_profit, s.net_profit,
                ({_TAXA_EXPR}) AS taxa_plataforma,
-               s.gross_profit - ({_TAXA_EXPR}) AS lucro_real,
+               {_LUCRO_REAL_CRUD} AS lucro_real,
                s.gross_margin,
                CASE WHEN s.total_value > 0
-                    THEN (s.gross_profit - ({_TAXA_EXPR})) / s.total_value * 100
+                    THEN ({_LUCRO_REAL_CRUD}) / s.total_value * 100
                     ELSE 0 END AS margem_real
         FROM sales s {_FEE_JOIN} {where}
         ORDER BY s.sale_date DESC
@@ -102,7 +106,7 @@ def export_sales_csv(db: Session, filters: dict) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["UF", "Data", "Plataforma", "SKU", "Qtd", "Preço Unit.",
-                     "Total", "Custo", "Frete", "Lucro Bruto", "Lucro c/ Frete",
+                     "Total", "Custo Total", "Frete", "Lucro Bruto", "Lucro c/ Frete",
                      "Taxa Plataforma", "Lucro Real", "Margem Bruta %", "Margem Real %"])
     for r in rows:
         writer.writerow(list(r))

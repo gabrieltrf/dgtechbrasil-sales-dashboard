@@ -1,14 +1,20 @@
 import { useEffect, useState, useCallback } from "react";
+import toast from "react-hot-toast";
 import KpiCard from "../components/cards/KpiCard";
 import RevenueLineChart from "../components/charts/RevenueLineChart";
 import PlatformPieChart from "../components/charts/PlatformPieChart";
 import TopSkuChart from "../components/charts/TopSkuChart";
 import StateBarChart from "../components/charts/StateBarChart";
+import MarginRanking from "../components/charts/MarginRanking";
 import {
   fetchSummary, fetchRevenueByMonth, fetchRevenueByPlatform,
   fetchTopSkus, fetchSalesByState, fetchFilterOptions,
+  fetchMonthComparison, fetchMarginRanking,
 } from "../api/client";
 import { formatBRL, formatPct, formatNum } from "../utils/formatters";
+
+const LS_THRESHOLD = "margin_alert_threshold";
+const DEFAULT_THRESHOLD = 20;
 
 function ChartCard({ title, children }) {
   return (
@@ -19,34 +25,55 @@ function ChartCard({ title, children }) {
   );
 }
 
+function MomBadge({ change }) {
+  if (change == null) return null;
+  const up = change >= 0;
+  return (
+    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${up ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+      {up ? "↑" : "↓"}{Math.abs(change).toFixed(1)}% vs mês ant.
+    </span>
+  );
+}
+
 export default function Dashboard() {
   const [filters, setFilters] = useState({ date_from: "", date_to: "", platform: "", uf: "" });
   const [options, setOptions] = useState({ platforms: [], ufs: [], date_min: "", date_max: "" });
-  const [summary, setSummary]   = useState(null);
-  const [byMonth, setByMonth]   = useState([]);
-  const [byPlat,  setByPlat]    = useState([]);
-  const [topSkus, setTopSkus]   = useState([]);
-  const [byState, setByState]   = useState([]);
-  const [loading, setLoading]   = useState(false);
+  const [summary,    setSummary]    = useState(null);
+  const [byMonth,    setByMonth]    = useState([]);
+  const [byPlat,     setByPlat]     = useState([]);
+  const [topSkus,    setTopSkus]    = useState([]);
+  const [byState,    setByState]    = useState([]);
+  const [momData,    setMomData]    = useState(null);
+  const [ranking,    setRanking]    = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [threshold,  setThreshold]  = useState(
+    () => Number(localStorage.getItem(LS_THRESHOLD) ?? DEFAULT_THRESHOLD)
+  );
 
   const activeFilters = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, m, p, sk, st] = await Promise.all([
+      const [s, m, p, sk, st, mom, rank] = await Promise.all([
         fetchSummary(activeFilters),
         fetchRevenueByMonth(activeFilters),
         fetchRevenueByPlatform(activeFilters),
         fetchTopSkus(activeFilters),
         fetchSalesByState(activeFilters),
+        fetchMonthComparison(activeFilters),
+        fetchMarginRanking(activeFilters),
       ]);
       setSummary(s.data);
       setByMonth(m.data);
       setByPlat(p.data);
       setTopSkus(sk.data);
       setByState(st.data);
-    } catch {}
+      setMomData(mom.data);
+      setRanking(rank.data);
+    } catch (e) {
+      toast.error("Erro ao carregar dados do dashboard.");
+    }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(activeFilters)]);
@@ -58,6 +85,14 @@ export default function Dashboard() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const setF = (k) => (e) => setFilters((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const handleThreshold = (e) => {
+    const v = Number(e.target.value);
+    setThreshold(v);
+    localStorage.setItem(LS_THRESHOLD, v);
+  };
+
+  const belowThreshold = ranking.filter((r) => r.margem_real < threshold);
 
   const inputCls = "text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -98,8 +133,33 @@ export default function Dashboard() {
               ✕ Limpar
             </button>
           )}
+          {/* Threshold de alerta */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Alertar abaixo de (%)</label>
+            <input
+              type="number" min={0} max={100} step={1}
+              className={`${inputCls} w-24`}
+              value={threshold}
+              onChange={handleThreshold}
+            />
+          </div>
         </div>
       </div>
+
+      {/* Banner de alerta de margem baixa */}
+      {belowThreshold.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-lg mt-0.5">⚠️</span>
+          <div>
+            <p className="text-sm font-semibold text-red-700">
+              {belowThreshold.length} SKU{belowThreshold.length > 1 ? "s" : ""} com margem real abaixo de {threshold}%
+            </p>
+            <p className="text-xs text-red-500 mt-0.5">
+              {belowThreshold.map((r) => r.sku).join(" · ")}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       {loading && !summary ? (
@@ -107,19 +167,24 @@ export default function Dashboard() {
       ) : summary ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <KpiCard title="Faturamento"      value={formatBRL(summary.faturamento)}      color="blue"   icon="💰" />
-            <KpiCard title="Lucro Bruto"      value={formatBRL(summary.lucro_bruto)}      color="green"  icon="📈"
+            <KpiCard title="Faturamento" value={formatBRL(summary.faturamento)} color="blue" icon="💰"
+              sub={<MomBadge change={momData?.faturamento_change} />} />
+            <KpiCard title="Lucro Bruto" value={formatBRL(summary.lucro_bruto)} color="green" icon="📈"
               sub={`Margem: ${formatPct(summary.margem_bruta)}`} />
-            <KpiCard title="Taxa de Plataforma" value={formatBRL(summary.taxa_plataforma)} color="red"   icon="🏷️"
+            <KpiCard title="Taxa de Plataforma" value={formatBRL(summary.taxa_plataforma)} color="red" icon="🏷️"
               sub="ML + Amazon" />
-            <KpiCard title="Lucro Real"       value={formatBRL(summary.lucro_real)}       color="purple" icon="✅"
-              sub={`Margem real: ${formatPct(summary.margem_real)}`} />
+            <KpiCard title="Lucro Real" value={formatBRL(summary.lucro_real)} color="purple" icon="✅"
+              sub={<>
+                <span className="block">Margem real: {formatPct(summary.margem_real)}</span>
+                <MomBadge change={momData?.lucro_real_change} />
+              </>} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <KpiCard title="Custo Produtos"   value={formatBRL(summary.custo_produtos)}   color="red"    icon="📦" />
-            <KpiCard title="Margem Bruta"     value={formatPct(summary.margem_bruta)}     color="green"  icon="%" />
-            <KpiCard title="Ticket Médio"     value={formatBRL(summary.ticket_medio)}     color="yellow" icon="🎫" />
-            <KpiCard title="Unid. Vendidas"   value={formatNum(summary.unidades_vendidas)} color="blue"  icon="📦"
+            <KpiCard title="Custo Produtos"   value={formatBRL(summary.custo_produtos)}    color="red"    icon="📦" />
+            <KpiCard title="Custo Operacional" value={formatBRL(summary.custo_operacional)} color="red"   icon="🔧"
+              sub="Por unidade × quantidade" />
+            <KpiCard title="Ticket Médio"      value={formatBRL(summary.ticket_medio)}      color="yellow" icon="🎫" />
+            <KpiCard title="Unid. Vendidas"    value={formatNum(summary.unidades_vendidas)} color="blue"   icon="📦"
               sub={`${formatNum(summary.num_vendas)} vendas`} />
           </div>
 
@@ -140,6 +205,13 @@ export default function Dashboard() {
               <StateBarChart data={byState} />
             </ChartCard>
           </div>
+
+          {/* Ranking de Margem */}
+          {ranking.length > 0 && (
+            <ChartCard title="Ranking de Margem Real por SKU (piores primeiro)">
+              <MarginRanking data={ranking} threshold={threshold} />
+            </ChartCard>
+          )}
         </>
       ) : (
         <div className="text-center py-20 text-gray-400">

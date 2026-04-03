@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import toast from "react-hot-toast";
 import { fetchSales, fetchFilterOptions, exportCsv } from "../api/client";
 import { formatBRL, formatPct, formatDate } from "../utils/formatters";
 
@@ -22,7 +23,9 @@ export default function Tabela() {
     try {
       const { data: d } = await fetchSales({ ...activeFilters, page, page_size: PAGE_SIZE });
       setData(d);
-    } catch {}
+    } catch (e) {
+      toast.error("Erro ao carregar vendas.");
+    }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(activeFilters), page]);

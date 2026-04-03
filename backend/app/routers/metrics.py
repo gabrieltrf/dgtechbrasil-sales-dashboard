@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..services import metrics_service as svc
-from ..schemas import MetricsSummary, RevenueByMonth, RevenueByPlatform, TopSku, SalesByState
+from ..schemas import MetricsSummary, RevenueByMonth, RevenueByPlatform, TopSku, SalesByState, MonthComparison, SkuMarginRanking
 
 router = APIRouter(prefix="/metrics")
 
@@ -46,3 +46,13 @@ def sales_by_state(filters: dict = Depends(_filters), db: Session = Depends(get_
 @router.get("/filter-options")
 def filter_options(db: Session = Depends(get_db)):
     return svc.get_filter_options(db)
+
+
+@router.get("/month-comparison", response_model=MonthComparison)
+def month_comparison(filters: dict = Depends(_filters), db: Session = Depends(get_db)):
+    return svc.get_month_comparison(db, filters)
+
+
+@router.get("/margin-ranking", response_model=list[SkuMarginRanking])
+def margin_ranking(filters: dict = Depends(_filters), db: Session = Depends(get_db)):
+    return svc.get_margin_ranking(db, filters)

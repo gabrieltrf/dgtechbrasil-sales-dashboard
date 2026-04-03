@@ -7,7 +7,8 @@ _FEE_JOIN = """
 """
 
 _TAXA_EXPR  = "COALESCE(f.fee_percent, 0) * s.total_value / 100.0 + COALESCE(f.fee_fixed, 0) * s.quantity"
-_LUCRO_REAL = f"s.gross_profit - ({_TAXA_EXPR})"
+_OP_EXPR    = "(SELECT COALESCE(SUM(amount), 0) FROM operational_costs WHERE cost_type='per_unit' AND active=1)"
+_LUCRO_REAL = f"s.gross_profit - ({_TAXA_EXPR}) - ({_OP_EXPR}) * s.quantity"
 
 
 def _build_where(filters: dict, prefix: str = "") -> tuple[str, dict]:
@@ -56,7 +57,8 @@ def get_summary(db: Session, filters: dict) -> dict:
                  THEN SUM(s.total_value) / COUNT(*) ELSE 0
             END AS ticket_medio,
             COALESCE(SUM(s.quantity), 0) AS unidades_vendidas,
-            COUNT(*) AS num_vendas
+            COUNT(*) AS num_vendas,
+            COALESCE(SUM(({_OP_EXPR}) * s.quantity), 0) AS custo_operacional
         FROM sales s {_FEE_JOIN} {where}
     """), params).fetchone()
     return dict(row._mapping)
@@ -138,3 +140,43 @@ def get_filter_options(db: Session) -> dict:
         "date_min": str(date_row[0]) if date_row[0] else None,
         "date_max": str(date_row[1]) if date_row[1] else None,
     }
+
+
+def get_month_comparison(db: Session, filters: dict) -> dict:
+    """Retorna comparativo entre o mês mais recente e o anterior."""
+    rows = get_revenue_by_month(db, filters)
+    if not rows:
+        return {"current": None, "previous": None, "faturamento_change": None, "lucro_real_change": None}
+    current  = rows[-1]
+    previous = rows[-2] if len(rows) >= 2 else None
+
+    def pct_change(cur, prev, key):
+        if prev is None or prev.get(key, 0) == 0:
+            return None
+        return round((cur[key] - prev[key]) / abs(prev[key]) * 100, 2)
+
+    return {
+        "current":           current,
+        "previous":          previous,
+        "faturamento_change": pct_change(current, previous, "faturamento"),
+        "lucro_real_change":  pct_change(current, previous, "lucro_real"),
+    }
+
+
+def get_margin_ranking(db: Session, filters: dict) -> list[dict]:
+    """Todos os SKUs ordenados por margem real ASC (piores primeiro)."""
+    where, params = _build_where(filters, prefix="s")
+    rows = db.execute(text(f"""
+        SELECT
+            s.sku,
+            SUM(s.total_value)   AS faturamento,
+            SUM(s.quantity)      AS unidades,
+            SUM({_LUCRO_REAL})   AS lucro_real,
+            CASE WHEN SUM(s.total_value) > 0
+                 THEN SUM({_LUCRO_REAL}) / SUM(s.total_value) * 100
+                 ELSE 0 END      AS margem_real
+        FROM sales s {_FEE_JOIN} {where}
+        GROUP BY s.sku
+        ORDER BY margem_real ASC
+    """), params).fetchall()
+    return [dict(r._mapping) for r in rows]

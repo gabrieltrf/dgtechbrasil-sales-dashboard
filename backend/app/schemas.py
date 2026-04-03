@@ -27,6 +27,7 @@ class MetricsSummary(BaseModel):
     lucro_liquido: float
     taxa_plataforma: float
     lucro_real: float
+    custo_operacional: float
     margem_bruta: float
     margem_liquida: float
     margem_real: float
@@ -89,3 +90,31 @@ class SalesPage(BaseModel):
     page: int
     page_size: int
     items: list[SaleRow]
+
+
+class OperationalCostIn(BaseModel):
+    name: str
+    cost_type: str = "per_unit"
+    amount: float
+    active: bool = True
+
+
+class OperationalCostOut(OperationalCostIn):
+    id: int
+
+    model_config = {"from_attributes": True}
+
+
+class MonthComparison(BaseModel):
+    current: dict | None
+    previous: dict | None
+    faturamento_change: float | None
+    lucro_real_change: float | None
+
+
+class SkuMarginRanking(BaseModel):
+    sku: str
+    faturamento: float
+    unidades: int
+    lucro_real: float
+    margem_real: float

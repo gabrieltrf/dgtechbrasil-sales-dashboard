@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, DateTime, UniqueConstraint, Index
 from .database import Base
 
 
@@ -28,6 +28,10 @@ class Sale(Base):
             "cost_price", "shipping",
             name="uq_sale_composite",
         ),
+        Index("ix_sales_sale_date", "sale_date"),
+        Index("ix_sales_sku",       "sku"),
+        Index("ix_sales_platform",  "platform"),
+        Index("ix_sales_uf",        "uf"),
     )
 
 
@@ -47,6 +51,17 @@ class FeeConfig(Base):
     __table_args__ = (
         UniqueConstraint("sku", "platform", name="uq_fee_sku_platform"),
     )
+
+
+class OperationalCost(Base):
+    """Custos operacionais fixos (embalagem, etiqueta, mão de obra, etc.)."""
+    __tablename__ = "operational_costs"
+
+    id        = Column(Integer, primary_key=True, index=True)
+    name      = Column(String, nullable=False)
+    cost_type = Column(String, default="per_unit")  # "per_unit" | "monthly"
+    amount    = Column(Float, nullable=False)
+    active    = Column(Boolean, default=True)
 
 
 class UploadLog(Base):

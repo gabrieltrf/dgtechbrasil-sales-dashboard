@@ -1,13 +1,16 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import Dashboard from "./pages/Dashboard";
 import Tabela from "./pages/Tabela";
 import Upload from "./pages/Upload";
 import Taxas from "./pages/Taxas";
+import Custos from "./pages/Custos";
 
 const NAV = [
   { to: "/",        label: "Dashboard",    icon: "📊" },
   { to: "/tabela",  label: "Vendas",       icon: "📋" },
   { to: "/taxas",   label: "Taxas",        icon: "🏷️" },
+  { to: "/custos",  label: "Custos",       icon: "💼" },
   { to: "/upload",  label: "Importar",     icon: "⬆️" },
 ];
 
@@ -41,7 +44,7 @@ export default function App() {
             ))}
           </nav>
           <div className="px-5 py-4 text-xs text-brand-300 border-t border-brand-700">
-            v1.0.0
+            v1.1.0
           </div>
         </aside>
 
@@ -51,10 +54,12 @@ export default function App() {
             <Route path="/"       element={<Dashboard />} />
             <Route path="/tabela" element={<Tabela />} />
             <Route path="/taxas"  element={<Taxas />} />
+            <Route path="/custos" element={<Custos />} />
             <Route path="/upload" element={<Upload />} />
           </Routes>
         </main>
       </div>
+      <Toaster position="top-right" />
     </BrowserRouter>
   );
 }

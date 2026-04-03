@@ -44,3 +44,21 @@ export const exportCsv = (params) => {
   ).toString();
   window.open(`/api/sales/export${qs ? "?" + qs : ""}`, "_blank");
 };
+
+export const fetchMonthComparison = (params) =>
+  api.get("/api/metrics/month-comparison", { params });
+
+export const fetchMarginRanking = (params) =>
+  api.get("/api/metrics/margin-ranking", { params });
+
+export const fetchOperationalCosts = () =>
+  api.get("/api/operational-costs");
+
+export const createOperationalCost = (data) =>
+  api.post("/api/operational-costs", data);
+
+export const updateOperationalCost = (id, data) =>
+  api.put(`/api/operational-costs/${id}`, data);
+
+export const deleteOperationalCost = (id) =>
+  api.delete(`/api/operational-costs/${id}`);
